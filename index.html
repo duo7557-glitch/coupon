@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v7</title>
+  <title>관람권 현황 · v8</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -363,7 +363,8 @@ function render(){
     const registered=couponTimeText(c.first_seen_at);
     const received=couponTimeText(c.received_at);
     const timeParts=[];
-    if(registered) timeParts.push("추출기 등록 "+registered);
+    if(c.registration_seq) timeParts.push("추출기 No."+c.registration_seq);
+    if(registered) timeParts.push("등록 "+registered);
     if(received) timeParts.push("수신 "+received);
     timeMeta.textContent=timeParts.join(" · ");
 
@@ -416,13 +417,14 @@ async function loadCoupons(){
     if(db && currentUser){
       const {data,error}=await db
         .from("coupon_catalog")
-        .select("coupon_id, first4, last6, merchant, category, title, expiry, received_at, first_seen_at, updated_at")
+        .select("coupon_id, registration_seq, first4, last6, merchant, category, title, expiry, received_at, first_seen_at, updated_at")
         .eq("owner_id",currentUser.id)
         .order("first_seen_at",{ascending:false});
       if(error) throw new Error(supabaseErrorText(error));
 
       coupons=(data||[]).map(row=>({
         id:row.coupon_id,
+        registration_seq:Number(row.registration_seq||0),
         first4:row.first4||"",
         last6:row.last6||"",
         merchant:row.merchant||"",
@@ -433,12 +435,19 @@ async function loadCoupons(){
         first_seen_at:row.first_seen_at||""
       }));
 
-      // 추출기 최초 등록시각 최신순. 같으면 수신시각, 그다음 쿠폰 ID 순.
+      // 추출기 화면의 실제 등록순번(rowid)을 최우선으로 사용합니다.
+      // registration_seq가 없는 과거 데이터만 시간 기준으로 보조 정렬합니다.
       coupons.sort((a,b)=>{
+        const seqA=Number(a.registration_seq||0);
+        const seqB=Number(b.registration_seq||0);
+        if(seqA!==seqB) return seqB-seqA;
+
         const diff=couponSortKey(b)-couponSortKey(a);
         if(diff!==0) return diff;
+
         const recv=String(b.received_at||"").localeCompare(String(a.received_at||""));
         if(recv!==0) return recv;
+
         return String(b.id||"").localeCompare(String(a.id||""));
       });
 
