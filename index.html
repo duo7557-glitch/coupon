@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황</title>
+  <title>관람권 현황 · v7</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -43,6 +43,14 @@
     .coupon { display:grid; grid-template-columns:30px 30px minmax(190px,1fr) minmax(150px,190px) auto; gap:10px; align-items:center; padding:12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }
     .coupon.used { background:#f9fafb; }
     .coupon.used .main,.coupon.used .meta { text-decoration:line-through; opacity:.64; }
+    .time-meta {
+      margin-top:5px;
+      color:#2563eb;
+      font-size:12px;
+      line-height:1.4;
+      font-variant-numeric:tabular-nums;
+    }
+
     input[type=checkbox] { width:21px; height:21px; cursor:pointer; }
     .main { font-size:16px; font-weight:700; }
     .barcode { font-variant-numeric:tabular-nums; letter-spacing:.5px; }
@@ -171,6 +179,40 @@ function formatUsedAt(iso){
 }
 function setSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el) el.textContent=msg; }
 
+function supabaseErrorText(error){
+  if(!error) return "알 수 없는 오류";
+  const parts=[];
+  if(error.message) parts.push(error.message);
+  if(error.details && error.details!==error.message) parts.push(error.details);
+  if(error.hint) parts.push("힌트: "+error.hint);
+  if(error.code) parts.push("코드: "+error.code);
+  return parts.join(" · ") || String(error);
+}
+
+function couponTimeText(raw){
+  const s=String(raw||"").trim();
+  if(!s) return "";
+  const m=s.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m) return s;
+  const mm=String(m[2]).padStart(2,"0");
+  const dd=String(m[3]).padStart(2,"0");
+  const hh=m[4]!==undefined?String(m[4]).padStart(2,"0"):"";
+  const mi=m[5]||"";
+  return hh ? `${mm}/${dd} ${hh}:${mi}` : `${mm}/${dd}`;
+}
+
+function couponSortKey(c){
+  // 추출기에 최초 등록된 시각(first_seen_at)을 최우선으로 정렬
+  const raw=String(c.first_seen_at||c.received_at||"").trim();
+  const m=raw.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if(!m) return 0;
+  const d=new Date(
+    Number(m[1]), Number(m[2])-1, Number(m[3]),
+    Number(m[4]||0), Number(m[5]||0), Number(m[6]||0)
+  );
+  return d.getTime() || 0;
+}
+
 function couponMonth(c){
   const raw=String(c.first_seen_at||c.received_at||"");
   const m=raw.match(/^(20\d{2})[-/.](\d{1,2})/);
@@ -263,7 +305,7 @@ async function persistStates(ids){
   const {error}=await db
     .from("coupon_usage")
     .upsert(rows,{onConflict:"owner_id,coupon_id"});
-  if(error) throw error;
+  if(error) throw new Error(supabaseErrorText(error));
   setSyncStatus(`${unique.length}개 일괄 저장 완료`);
 }
 
@@ -315,7 +357,18 @@ function render(){
     main.innerHTML=`<span class="barcode">${escapeHtml(c.first4||"")}••••••${escapeHtml(c.last6||"")}</span>`;
     const meta=document.createElement("div"); meta.className="meta";
     meta.textContent=[c.merchant,c.title,c.expiry].filter(Boolean).join(" · ");
+
+    const timeMeta=document.createElement("div");
+    timeMeta.className="time-meta";
+    const registered=couponTimeText(c.first_seen_at);
+    const received=couponTimeText(c.received_at);
+    const timeParts=[];
+    if(registered) timeParts.push("추출기 등록 "+registered);
+    if(received) timeParts.push("수신 "+received);
+    timeMeta.textContent=timeParts.join(" · ");
+
     body.append(main,meta);
+    if(timeParts.length) body.appendChild(timeMeta);
 
     const usageBox=document.createElement("div"); usageBox.className="usage-box";
     const usageLabel=document.createElement("div"); usageLabel.className="usage-label"; usageLabel.textContent="사용처";
@@ -354,7 +407,7 @@ async function persistState(couponId){
     usage_place:s.usage_place||null,
     updated_at:new Date().toISOString()
   }, {onConflict:"owner_id,coupon_id"});
-  if(error) throw error;
+  if(error) throw new Error(supabaseErrorText(error));
   setSyncStatus("저장 완료 · 다른 기기에도 곧 반영됩니다.");
 }
 
@@ -366,7 +419,7 @@ async function loadCoupons(){
         .select("coupon_id, first4, last6, merchant, category, title, expiry, received_at, first_seen_at, updated_at")
         .eq("owner_id",currentUser.id)
         .order("first_seen_at",{ascending:false});
-      if(error) throw error;
+      if(error) throw new Error(supabaseErrorText(error));
 
       coupons=(data||[]).map(row=>({
         id:row.coupon_id,
@@ -379,6 +432,15 @@ async function loadCoupons(){
         received_at:row.received_at||"",
         first_seen_at:row.first_seen_at||""
       }));
+
+      // 추출기 최초 등록시각 최신순. 같으면 수신시각, 그다음 쿠폰 ID 순.
+      coupons.sort((a,b)=>{
+        const diff=couponSortKey(b)-couponSortKey(a);
+        if(diff!==0) return diff;
+        const recv=String(b.received_at||"").localeCompare(String(a.received_at||""));
+        if(recv!==0) return recv;
+        return String(b.id||"").localeCompare(String(a.id||""));
+      });
 
       const latest=(data||[]).map(r=>r.updated_at).filter(Boolean).sort().pop();
       document.getElementById("updated").textContent=
@@ -404,15 +466,39 @@ async function loadCoupons(){
 
 async function loadCloudState(silent=false){
   if(!db || !currentUser) return;
-  const ids=coupons.map(c=>c.id).filter(Boolean);
-  if(!ids.length){ stateMap={}; render(); return; }
-  if(!silent) setSyncStatus("서버와 동기화 중...");
-  const {data,error}=await db.from("coupon_usage").select("coupon_id, used, used_at, usage_place").eq("owner_id",currentUser.id).in("coupon_id",ids);
-  if(error) throw error;
+
+  if(!silent) setSyncStatus("서버와 사용상태 동기화 중...");
+
+  // 중요: 쿠폰 ID 70~100개를 .in(...)으로 URL에 붙이면
+  // 요청 URL이 길어져 400 Bad Request가 날 수 있으므로 owner_id만 조회합니다.
+  const {data,error}=await db
+    .from("coupon_usage")
+    .select("coupon_id, used, used_at, usage_place, updated_at")
+    .eq("owner_id",currentUser.id);
+
+  if(error) throw new Error(supabaseErrorText(error));
+
+  const validIds=new Set(coupons.map(c=>c.id).filter(Boolean));
   const next={};
-  for(const row of data||[]){ next[row.coupon_id]={used:!!row.used, used_at:row.used_at||null, usage_place:row.usage_place||""}; }
-  stateMap=next; render();
-  if(!silent) setSyncStatus("동기화 완료 · "+new Date().toLocaleTimeString());
+  for(const row of data||[]){
+    if(!validIds.has(row.coupon_id)) continue;
+    next[row.coupon_id]={
+      used:!!row.used,
+      used_at:row.used_at||null,
+      usage_place:row.usage_place||"",
+      updated_at:row.updated_at||null
+    };
+  }
+
+  stateMap=next;
+  render();
+
+  if(!silent){
+    setSyncStatus(
+      `동기화 완료 · 상태 ${Object.keys(next).length}개 · `+
+      new Date().toLocaleTimeString()
+    );
+  }
 }
 
 function updateAuthUI(){
