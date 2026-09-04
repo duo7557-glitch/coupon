@@ -96,7 +96,7 @@
 
     <div id="list" class="list"></div>
 
-    <div class="note">바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다.</div>
+    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다.</div>
   </div>
 </div>
 
@@ -216,15 +216,45 @@ async function persistState(couponId){
 
 async function loadCoupons(){
   try{
+    if(db && currentUser){
+      const {data,error}=await db
+        .from("coupon_catalog")
+        .select("coupon_id, first4, last6, merchant, category, title, expiry, received_at, first_seen_at, updated_at")
+        .eq("owner_id",currentUser.id)
+        .order("first_seen_at",{ascending:false});
+      if(error) throw error;
+
+      coupons=(data||[]).map(row=>({
+        id:row.coupon_id,
+        first4:row.first4||"",
+        last6:row.last6||"",
+        merchant:row.merchant||"",
+        category:row.category||"",
+        title:row.title||"",
+        expiry:row.expiry||"",
+        received_at:row.received_at||"",
+        first_seen_at:row.first_seen_at||""
+      }));
+
+      const latest=(data||[]).map(r=>r.updated_at).filter(Boolean).sort().pop();
+      document.getElementById("updated").textContent=
+        "Supabase 관람권 "+coupons.length+"개"+
+        (latest?(" · 동기화 "+new Date(latest).toLocaleString()):"");
+      render();
+      return;
+    }
+
     const r=await fetch("./coupons.json?ts="+Date.now(), {cache:"no-store"});
-    if(!r.ok) throw new Error("coupons.json을 불러오지 못했습니다.");
+    if(!r.ok) throw new Error("로그인 전 예시 데이터를 불러오지 못했습니다.");
     const data=await r.json();
     coupons=Array.isArray(data.coupons)?data.coupons:[];
-    document.getElementById("updated").textContent="쿠폰 업데이트: "+(data.updated_at||"시간 정보 없음");
+    document.getElementById("updated").textContent=
+      "로그인 전 예시 · "+(data.updated_at||"시간 정보 없음");
     render();
   }catch(e){
     document.getElementById("updated").textContent="쿠폰 데이터 로드 실패";
-    document.getElementById("list").innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`;
+    document.getElementById("list").innerHTML=
+      `<div class="empty">${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -249,16 +279,49 @@ function updateAuthUI(){
   else { out.classList.remove("hidden"); inn.classList.add("hidden"); loadLocalState(); }
   render();
 }
-function startSyncTimer(){ clearInterval(syncTimer); if(currentUser) syncTimer=setInterval(()=>loadCloudState(true).catch(()=>{}),5000); }
+function startSyncTimer(){
+  clearInterval(syncTimer);
+  if(currentUser) syncTimer=setInterval(async()=>{
+    try{
+      await loadCoupons();
+      await loadCloudState(true);
+    }catch(_){}
+  },5000);
+}
 
 async function initAuth(){
-  if(!configured){ loadLocalState(); updateAuthUI(); render(); return; }
+  if(!configured){
+    loadLocalState();
+    updateAuthUI();
+    await loadCoupons();
+    render();
+    return;
+  }
+
   const {data:{session}}=await db.auth.getSession();
-  currentUser=session?.user||null; updateAuthUI();
-  if(currentUser){ await loadCloudState().catch(e=>setSyncStatus("동기화 실패: "+e.message)); startSyncTimer(); }
+  currentUser=session?.user||null;
+  updateAuthUI();
+
+  if(currentUser){
+    await loadCoupons().catch(e=>setSyncStatus("목록 동기화 실패: "+e.message));
+    await loadCloudState().catch(e=>setSyncStatus("상태 동기화 실패: "+e.message));
+    startSyncTimer();
+  }else{
+    await loadCoupons();
+  }
+
   db.auth.onAuthStateChange(async(_event,session)=>{
-    currentUser=session?.user||null; updateAuthUI(); startSyncTimer();
-    if(currentUser) setTimeout(()=>loadCloudState().catch(e=>setSyncStatus("동기화 실패: "+e.message)),0);
+    currentUser=session?.user||null;
+    updateAuthUI();
+    startSyncTimer();
+    setTimeout(async()=>{
+      try{
+        await loadCoupons();
+        if(currentUser) await loadCloudState();
+      }catch(e){
+        setSyncStatus("동기화 실패: "+e.message);
+      }
+    },0);
   });
 }
 
@@ -276,10 +339,10 @@ document.getElementById("refreshBtn").onclick=async()=>{ try{ await loadCoupons(
 document.getElementById("showAll").onclick=()=>{mode="all";render();};
 document.getElementById("showActive").onclick=()=>{mode="active";render();};
 document.getElementById("showUsed").onclick=()=>{mode="used";render();};
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&currentUser) loadCloudState(true).catch(()=>{}); });
-window.addEventListener("focus",()=>{ if(currentUser) loadCloudState(true).catch(()=>{}); });
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&currentUser){ loadCoupons().then(()=>loadCloudState(true)).catch(()=>{}); } });
+window.addEventListener("focus",()=>{ if(currentUser){ loadCoupons().then(()=>loadCloudState(true)).catch(()=>{}); } });
 
-(async()=>{ await loadCoupons(); await initAuth(); })();
+(async()=>{ await initAuth(); })();
 </script>
 </body>
 </html>
