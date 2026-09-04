@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v8</title>
+  <title>관람권 현황 · v10</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -119,6 +119,7 @@
       <button id="showAll">전체 보기</button>
       <button id="showActive">미사용만</button>
       <button id="showUsed">사용완료만</button>
+      <button id="sendUnusedKakao" class="primary">💬 미사용 쿠폰 카톡 보내기</button>
     </div>
 
     <div class="bulkbar">
@@ -140,7 +141,7 @@
 
     <div id="list" class="list"></div>
 
-    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 월별 탭은 등록일 기준으로 자동 생성되며, 선택 체크박스로 여러 쿠폰을 한 번에 사용완료/미사용/사용처 변경할 수 있습니다.</div>
+    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. <b>미사용 쿠폰 카톡 보내기</b> 버튼은 전체 번호를 브라우저에 보여주지 않고 Supabase Edge Function에서 직접 카카오로 전송합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 월별 탭은 등록일 기준으로 자동 생성되며, 선택 체크박스로 여러 쿠폰을 한 번에 사용완료/미사용/사용처 변경할 수 있습니다.</div>
   </div>
 </div>
 
@@ -578,6 +579,72 @@ document.getElementById("refreshBtn").onclick=async()=>{ try{ await loadCoupons(
 document.getElementById("showAll").onclick=()=>{mode="all";selectedIds.clear();render();};
 document.getElementById("showActive").onclick=()=>{mode="active";selectedIds.clear();render();};
 document.getElementById("showUsed").onclick=()=>{mode="used";selectedIds.clear();render();};
+
+
+document.getElementById("sendUnusedKakao").onclick=async()=>{
+  if(!db || !currentUser){
+    alert("먼저 Supabase에 로그인해주세요.");
+    return;
+  }
+
+  const unusedCount=coupons.filter(c=>!getState(c.id).used).length;
+
+  if(!unusedCount){
+    alert("현재 미사용 쿠폰이 없습니다.");
+    return;
+  }
+
+  if(!confirm(
+    `현재 미사용 쿠폰 ${unusedCount}건의 전체 번호를\n`+
+    `카카오톡 '나와의 채팅'으로 보낼까요?\n\n`+
+    `웹 화면에는 전체 번호가 표시되지 않습니다.`
+  )) return;
+
+  const btn=document.getElementById("sendUnusedKakao");
+  const oldText=btn.textContent;
+  btn.disabled=true;
+  btn.textContent="카카오 전송 중...";
+  setSyncStatus("서버에서 미사용 쿠폰 전체번호를 확인해 카카오로 보내는 중...");
+
+  try{
+    const {data,error}=await db.functions.invoke(
+      "swift-endpoint",
+      {body:{}}
+    );
+
+    if(error){
+      let detail=error.message||String(error);
+      try{
+        if(error.context){
+          const payload=await error.context.json();
+          if(payload?.error) detail=payload.error;
+        }
+      }catch(_){}
+      throw new Error(detail);
+    }
+
+    if(data?.error) throw new Error(data.error);
+
+    const count=Number(data?.coupon_count||0);
+    const messages=Number(data?.message_count||0);
+
+    if(!count){
+      setSyncStatus("현재 미사용 쿠폰이 없습니다.");
+      alert("현재 미사용 쿠폰이 없습니다.");
+    }else{
+      const msg=`미사용 쿠폰 ${count}건을 카카오 ${messages}개 메시지로 보냈습니다.`;
+      setSyncStatus(msg);
+      alert(msg);
+    }
+  }catch(e){
+    const msg="카카오 전송 실패: "+(e?.message||String(e));
+    setSyncStatus(msg);
+    alert(msg);
+  }finally{
+    btn.disabled=false;
+    btn.textContent=oldText;
+  }
+};
 
 document.getElementById("selectVisible").onclick=()=>{
   for(const c of visibleCoupons()) selectedIds.add(c.id);
