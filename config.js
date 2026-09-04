@@ -2,6 +2,6 @@
 // 브라우저에는 Publishable Key(또는 legacy anon key)만 사용하세요.
 // service_role / secret key는 절대 넣지 마세요.
 window.COUPON_CONFIG = {
-  SUPABASE_URL: "YOUR_SUPABASE_PROJECT_URL",
-  SUPABASE_PUBLISHABLE_KEY: "YOUR_SUPABASE_PUBLISHABLE_KEY"
+  SUPABASE_URL: "https://rtmtdhvgxxmiokjpoiim.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_iOHBiX1y4R2a6HGLVrYrfg_KMBaKJku"
 };
