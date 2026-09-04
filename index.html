@@ -3,92 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>신규 관람권 현황</title>
+  <title>관람권 현황</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
   <style>
-    :root { color-scheme: light; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
-      background: #f6f7f9;
-      color: #111827;
-    }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 22px 14px 48px; }
-    .card {
-      background: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 14px;
-      padding: 18px;
-      box-shadow: 0 3px 12px rgba(0,0,0,.04);
-    }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    .sub { color: #6b7280; font-size: 14px; margin-bottom: 16px; }
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin: 12px 0 18px;
-    }
-    .summary > div {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 10px;
-      text-align: center;
-    }
-    .summary b { display:block; font-size:20px; margin-top:2px; }
-    .toolbar {
-      display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;
-    }
-    button {
-      border:1px solid #d1d5db;
-      background:#fff;
-      border-radius:9px;
-      padding:8px 11px;
-      font-size:14px;
-      cursor:pointer;
-    }
+    body { margin:0; background:#f6f7f9; color:#111827; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif; }
+    .wrap { max-width:860px; margin:auto; padding:20px 14px 50px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:15px; padding:18px; box-shadow:0 3px 14px rgba(0,0,0,.04); }
+    h1 { margin:0 0 6px; font-size:24px; }
+    .sub { color:#6b7280; font-size:13px; margin-bottom:14px; }
+    .auth { padding:14px; border:1px solid #e5e7eb; background:#f9fafb; border-radius:11px; margin-bottom:15px; }
+    .auth-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    input[type=email] { flex:1; min-width:210px; padding:10px 11px; border:1px solid #d1d5db; border-radius:9px; font-size:14px; }
+    button { border:1px solid #d1d5db; background:#fff; border-radius:9px; padding:9px 11px; cursor:pointer; font-size:14px; }
     button:hover { background:#f3f4f6; }
-    .list { display:flex; flex-direction:column; gap:8px; }
-    .coupon {
-      display:grid;
-      grid-template-columns: 28px 1fr auto;
-      gap:10px;
-      align-items:center;
-      padding:12px;
-      border:1px solid #e5e7eb;
-      border-radius:10px;
-      background:#fff;
-    }
-    .coupon.used { background:#f9fafb; opacity:.67; }
-    .coupon.used .main,
-    .coupon.used .meta { text-decoration: line-through; }
-    .main { font-weight:700; font-size:16px; }
-    .barcode { font-variant-numeric: tabular-nums; letter-spacing:.6px; }
-    .meta { margin-top:4px; color:#6b7280; font-size:13px; }
-    .badge {
-      font-size:12px;
-      color:#374151;
-      background:#f3f4f6;
-      border-radius:999px;
-      padding:5px 8px;
-      white-space:nowrap;
-    }
-    .empty { padding:22px 4px; text-align:center; color:#6b7280; }
-    .note { margin-top:15px; color:#6b7280; font-size:12px; line-height:1.5; }
-    input[type="checkbox"] { width:20px; height:20px; cursor:pointer; }
-    @media (max-width:520px) {
-      .summary { grid-template-columns:1fr 1fr 1fr; }
-      .coupon { grid-template-columns:28px 1fr; }
-      .badge { grid-column:2; justify-self:start; }
+    button.primary { background:#111827; color:white; border-color:#111827; }
+    .status { margin-top:8px; font-size:13px; color:#4b5563; line-height:1.45; }
+    .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0 16px; }
+    .summary > div { border:1px solid #e5e7eb; background:#f9fafb; border-radius:10px; padding:10px; text-align:center; font-size:13px; }
+    .summary b { display:block; font-size:21px; margin-top:2px; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .list { display:flex; flex-direction:column; gap:9px; }
+    .coupon { display:grid; grid-template-columns:30px minmax(190px,1fr) minmax(150px,190px) auto; gap:10px; align-items:center; padding:12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }
+    .coupon.used { background:#f9fafb; }
+    .coupon.used .main,.coupon.used .meta { text-decoration:line-through; opacity:.64; }
+    input[type=checkbox] { width:21px; height:21px; cursor:pointer; }
+    .main { font-size:16px; font-weight:700; }
+    .barcode { font-variant-numeric:tabular-nums; letter-spacing:.5px; }
+    .meta { color:#6b7280; font-size:13px; margin-top:4px; line-height:1.45; }
+    .usage-box { display:flex; flex-direction:column; gap:5px; }
+    .usage-label { color:#6b7280; font-size:11px; }
+    .usage-select { width:100%; padding:8px 9px; border:1px solid #d1d5db; border-radius:8px; background:#fff; font-size:14px; }
+    .state-box { min-width:132px; text-align:right; }
+    .badge { display:inline-block; font-size:12px; background:#f3f4f6; border-radius:999px; padding:5px 8px; }
+    .used-time { margin-top:6px; font-size:11px; color:#6b7280; line-height:1.35; white-space:nowrap; }
+    .empty { text-align:center; padding:24px 6px; color:#6b7280; }
+    .note { color:#6b7280; font-size:12px; line-height:1.55; margin-top:14px; }
+    .hidden { display:none !important; }
+    .sync-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; margin-right:5px; }
+    .local-dot { background:#f59e0b; }
+    @media (max-width:700px) {
+      .coupon { grid-template-columns:30px 1fr; align-items:start; }
+      .usage-box,.state-box { grid-column:2; }
+      .state-box { text-align:left; }
+      .used-time { white-space:normal; }
     }
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>신규 관람권 현황</h1>
-    <div class="sub" id="updated">불러오는 중...</div>
+    <h1>관람권 현황</h1>
+    <div class="sub" id="updated">쿠폰 데이터 불러오는 중...</div>
+
+    <div class="auth">
+      <div id="localMode">
+        <div style="font-weight:700;"><span class="sync-dot local-dot"></span>현재: 이 기기에서만 저장</div>
+        <div class="status">Supabase 설정 전에는 사용완료·사용시간·사용처가 이 브라우저에만 저장됩니다. 나중에 Supabase를 연결하면 PC·폰 공유 모드로 바뀝니다.</div>
+      </div>
+
+      <div id="signedOut" class="hidden">
+        <div style="font-weight:700;margin-bottom:8px;">PC·폰 동기화 로그인</div>
+        <div class="auth-row">
+          <input id="email" type="email" placeholder="로그인할 이메일 주소">
+          <button class="primary" id="sendMagic">로그인 링크 받기</button>
+        </div>
+        <div class="status" id="authMessage">같은 이메일로 PC와 폰에서 로그인하면 사용완료·사용시간·사용처가 공유됩니다.</div>
+      </div>
+
+      <div id="signedIn" class="hidden">
+        <div class="auth-row">
+          <div style="flex:1"><span class="sync-dot"></span>동기화 로그인: <b id="userEmail"></b></div>
+          <button id="refreshBtn">지금 동기화</button>
+          <button id="signOutBtn">로그아웃</button>
+        </div>
+        <div class="status" id="syncStatus">동기화 준비 중...</div>
+      </div>
+    </div>
 
     <div class="summary">
       <div>전체<b id="total">0</b></div>
@@ -102,115 +94,192 @@
       <button id="showUsed">사용완료만</button>
     </div>
 
-    <div class="list" id="list"></div>
+    <div id="list" class="list"></div>
 
-    <div class="note">
-      페이지에는 전체 바코드가 아니라 앞 4자리와 뒷 6자리만 표시합니다.
-      체크 상태는 이 브라우저의 localStorage에 저장되므로 같은 기기·같은 브라우저에서는 페이지를 다시 열어도 유지됩니다.
-    </div>
+    <div class="note">바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다.</div>
   </div>
 </div>
 
 <script>
+const cfg = window.COUPON_CONFIG || {};
+const configured = cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY && !cfg.SUPABASE_URL.includes("YOUR_") && !cfg.SUPABASE_PUBLISHABLE_KEY.includes("YOUR_");
+const LOCAL_KEY = "coupon-dashboard-state-v3";
+const PLACE_OPTIONS = ["", "당근", "니콘", "깊스", "팔라고", "기타"];
+
+let db = null;
+let currentUser = null;
 let coupons = [];
+let stateMap = {};
 let mode = "all";
-const USED_KEY = "coupon-dashboard-used-v1";
+let syncTimer = null;
 
-function loadUsed() {
-  try { return JSON.parse(localStorage.getItem(USED_KEY) || "{}"); }
-  catch (_) { return {}; }
+if (configured) {
+  db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
 }
-function saveUsed(used) {
-  localStorage.setItem(USED_KEY, JSON.stringify(used));
-}
-function isUsed(id) {
-  const used = loadUsed();
-  return !!used[id];
-}
-function setUsed(id, value) {
-  const used = loadUsed();
-  if (value) used[id] = true;
-  else delete used[id];
-  saveUsed(used);
-  render();
-}
-function render() {
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-  const usedMap = loadUsed();
 
-  const total = coupons.length;
-  const usedCount = coupons.filter(c => usedMap[c.id]).length;
-  document.getElementById("total").textContent = total;
-  document.getElementById("used").textContent = usedCount;
-  document.getElementById("active").textContent = total - usedCount;
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[m]);
+}
+function defaultState(){ return {used:false, used_at:null, usage_place:""}; }
+function getState(id){ return stateMap[id] || defaultState(); }
+function loadLocalState(){ try { stateMap = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}"); } catch(_) { stateMap = {}; } }
+function saveLocalState(){ localStorage.setItem(LOCAL_KEY, JSON.stringify(stateMap)); }
+function formatUsedAt(iso){
+  if(!iso) return "";
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(d);
+}
+function setSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el) el.textContent=msg; }
 
-  const filtered = coupons.filter(c => {
-    const u = !!usedMap[c.id];
-    if (mode === "active") return !u;
-    if (mode === "used") return u;
+function render(){
+  const list=document.getElementById("list");
+  list.innerHTML="";
+  const total=coupons.length;
+  const usedCount=coupons.filter(c=>!!getState(c.id).used).length;
+  document.getElementById("total").textContent=total;
+  document.getElementById("used").textContent=usedCount;
+  document.getElementById("active").textContent=total-usedCount;
+
+  const filtered=coupons.filter(c=>{
+    const u=!!getState(c.id).used;
+    if(mode==="active") return !u;
+    if(mode==="used") return u;
     return true;
   });
+  if(!filtered.length){ list.innerHTML='<div class="empty">표시할 관람권이 없습니다.</div>'; return; }
 
-  if (!filtered.length) {
-    list.innerHTML = '<div class="empty">표시할 관람권이 없습니다.</div>';
-    return;
-  }
+  for(const c of filtered){
+    const s=getState(c.id);
+    const row=document.createElement("div");
+    row.className="coupon"+(s.used?" used":"");
 
-  for (const c of filtered) {
-    const used = !!usedMap[c.id];
-    const row = document.createElement("div");
-    row.className = "coupon" + (used ? " used" : "");
+    const check=document.createElement("input");
+    check.type="checkbox";
+    check.checked=!!s.used;
+    check.title="사용완료";
+    check.addEventListener("change", async()=>{
+      const before={...getState(c.id)};
+      stateMap[c.id]={...before, used:check.checked, used_at:check.checked?(before.used_at||new Date().toISOString()):null};
+      render();
+      try { await persistState(c.id); }
+      catch(e){ stateMap[c.id]=before; render(); setSyncStatus("저장 실패: "+e.message); }
+    });
 
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.checked = used;
-    check.setAttribute("aria-label", "사용완료");
-    check.addEventListener("change", () => setUsed(c.id, check.checked));
+    const body=document.createElement("div");
+    const main=document.createElement("div"); main.className="main";
+    main.innerHTML=`<span class="barcode">${escapeHtml(c.first4||"")}••••••${escapeHtml(c.last6||"")}</span>`;
+    const meta=document.createElement("div"); meta.className="meta";
+    meta.textContent=[c.merchant,c.title,c.expiry].filter(Boolean).join(" · ");
+    body.append(main,meta);
 
-    const body = document.createElement("div");
-    const main = document.createElement("div");
-    main.className = "main";
-    main.innerHTML = `<span class="barcode">${escapeHtml(c.first4 || "")}••••••${escapeHtml(c.last6 || "")}</span>`;
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = [c.merchant, c.title, c.expiry].filter(Boolean).join(" · ");
-    body.append(main, meta);
+    const usageBox=document.createElement("div"); usageBox.className="usage-box";
+    const usageLabel=document.createElement("div"); usageLabel.className="usage-label"; usageLabel.textContent="사용처";
+    const select=document.createElement("select"); select.className="usage-select";
+    for(const place of PLACE_OPTIONS){
+      const opt=document.createElement("option"); opt.value=place; opt.textContent=place||"미지정"; if((s.usage_place||"")===place) opt.selected=true; select.appendChild(opt);
+    }
+    select.addEventListener("change", async()=>{
+      const before={...getState(c.id)};
+      stateMap[c.id]={...before, usage_place:select.value};
+      try { await persistState(c.id); render(); }
+      catch(e){ stateMap[c.id]=before; render(); setSyncStatus("사용처 저장 실패: "+e.message); }
+    });
+    usageBox.append(usageLabel,select);
 
-    const badge = document.createElement("div");
-    badge.className = "badge";
-    badge.textContent = used ? "사용완료" : "미사용";
+    const stateBox=document.createElement("div"); stateBox.className="state-box";
+    const badge=document.createElement("div"); badge.className="badge"; badge.textContent=s.used?"사용완료":"미사용"; stateBox.appendChild(badge);
+    if(s.used && s.used_at){
+      const time=document.createElement("div"); time.className="used-time"; time.innerHTML="사용일시<br>"+escapeHtml(formatUsedAt(s.used_at)); stateBox.appendChild(time);
+    }
 
-    row.append(check, body, badge);
+    row.append(check,body,usageBox,stateBox);
     list.appendChild(row);
   }
 }
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, m => ({
-    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
-  })[m]);
+
+async function persistState(couponId){
+  const s=getState(couponId);
+  if(!db || !currentUser){ saveLocalState(); return; }
+  setSyncStatus("저장 중...");
+  const {error}=await db.from("coupon_usage").upsert({
+    owner_id:currentUser.id,
+    coupon_id:couponId,
+    used:!!s.used,
+    used_at:s.used_at||null,
+    usage_place:s.usage_place||null,
+    updated_at:new Date().toISOString()
+  }, {onConflict:"owner_id,coupon_id"});
+  if(error) throw error;
+  setSyncStatus("저장 완료 · 다른 기기에도 곧 반영됩니다.");
 }
 
-document.getElementById("showAll").onclick = () => { mode="all"; render(); };
-document.getElementById("showActive").onclick = () => { mode="active"; render(); };
-document.getElementById("showUsed").onclick = () => { mode="used"; render(); };
-
-fetch("./coupons.json", {cache:"no-store"})
-  .then(r => {
-    if (!r.ok) throw new Error("coupons.json을 불러오지 못했습니다.");
-    return r.json();
-  })
-  .then(data => {
-    coupons = Array.isArray(data.coupons) ? data.coupons : [];
-    document.getElementById("updated").textContent =
-      "업데이트: " + (data.updated_at || "시간 정보 없음");
+async function loadCoupons(){
+  try{
+    const r=await fetch("./coupons.json?ts="+Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error("coupons.json을 불러오지 못했습니다.");
+    const data=await r.json();
+    coupons=Array.isArray(data.coupons)?data.coupons:[];
+    document.getElementById("updated").textContent="쿠폰 업데이트: "+(data.updated_at||"시간 정보 없음");
     render();
-  })
-  .catch(err => {
-    document.getElementById("updated").textContent = "데이터 로드 실패";
-    document.getElementById("list").innerHTML =
-      `<div class="empty">${escapeHtml(err.message)}</div>`;
+  }catch(e){
+    document.getElementById("updated").textContent="쿠폰 데이터 로드 실패";
+    document.getElementById("list").innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadCloudState(silent=false){
+  if(!db || !currentUser) return;
+  const ids=coupons.map(c=>c.id).filter(Boolean);
+  if(!ids.length){ stateMap={}; render(); return; }
+  if(!silent) setSyncStatus("서버와 동기화 중...");
+  const {data,error}=await db.from("coupon_usage").select("coupon_id, used, used_at, usage_place").eq("owner_id",currentUser.id).in("coupon_id",ids);
+  if(error) throw error;
+  const next={};
+  for(const row of data||[]){ next[row.coupon_id]={used:!!row.used, used_at:row.used_at||null, usage_place:row.usage_place||""}; }
+  stateMap=next; render();
+  if(!silent) setSyncStatus("동기화 완료 · "+new Date().toLocaleTimeString());
+}
+
+function updateAuthUI(){
+  const local=document.getElementById("localMode"), out=document.getElementById("signedOut"), inn=document.getElementById("signedIn");
+  if(!configured){ local.classList.remove("hidden"); out.classList.add("hidden"); inn.classList.add("hidden"); return; }
+  local.classList.add("hidden");
+  if(currentUser){ out.classList.add("hidden"); inn.classList.remove("hidden"); document.getElementById("userEmail").textContent=currentUser.email||"사용자"; }
+  else { out.classList.remove("hidden"); inn.classList.add("hidden"); loadLocalState(); }
+  render();
+}
+function startSyncTimer(){ clearInterval(syncTimer); if(currentUser) syncTimer=setInterval(()=>loadCloudState(true).catch(()=>{}),5000); }
+
+async function initAuth(){
+  if(!configured){ loadLocalState(); updateAuthUI(); render(); return; }
+  const {data:{session}}=await db.auth.getSession();
+  currentUser=session?.user||null; updateAuthUI();
+  if(currentUser){ await loadCloudState().catch(e=>setSyncStatus("동기화 실패: "+e.message)); startSyncTimer(); }
+  db.auth.onAuthStateChange(async(_event,session)=>{
+    currentUser=session?.user||null; updateAuthUI(); startSyncTimer();
+    if(currentUser) setTimeout(()=>loadCloudState().catch(e=>setSyncStatus("동기화 실패: "+e.message)),0);
   });
+}
+
+document.getElementById("sendMagic").onclick=async()=>{
+  if(!configured) return;
+  const email=document.getElementById("email").value.trim();
+  if(!email){ alert("이메일 주소를 입력해주세요."); return; }
+  const btn=document.getElementById("sendMagic"); btn.disabled=true; document.getElementById("authMessage").textContent="로그인 링크를 보내는 중...";
+  const {error}=await db.auth.signInWithOtp({email, options:{emailRedirectTo:window.location.origin+window.location.pathname}});
+  btn.disabled=false;
+  document.getElementById("authMessage").textContent=error?("전송 실패: "+error.message):"이메일로 로그인 링크를 보냈습니다. PC와 폰 모두 같은 이메일을 사용하세요.";
+};
+document.getElementById("signOutBtn").onclick=async()=>{ if(db) await db.auth.signOut(); };
+document.getElementById("refreshBtn").onclick=async()=>{ try{ await loadCoupons(); await loadCloudState(); }catch(e){ setSyncStatus("동기화 실패: "+e.message); } };
+document.getElementById("showAll").onclick=()=>{mode="all";render();};
+document.getElementById("showActive").onclick=()=>{mode="active";render();};
+document.getElementById("showUsed").onclick=()=>{mode="used";render();};
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&currentUser) loadCloudState(true).catch(()=>{}); });
+window.addEventListener("focus",()=>{ if(currentUser) loadCloudState(true).catch(()=>{}); });
+
+(async()=>{ await loadCoupons(); await initAuth(); })();
 </script>
 </body>
 </html>
