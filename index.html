@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v10</title>
+  <title>관람권 현황 · v11</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -74,7 +74,53 @@
       .state-box { text-align:left; }
       .used-time { white-space:normal; }
     }
-  </style>
+  
+    .search-bar {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin:0 0 12px;
+      padding:10px;
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+      border-radius:10px;
+    }
+    .search-input {
+      flex:1;
+      min-width:220px;
+      padding:9px 10px;
+      border:1px solid #cbd5e1;
+      border-radius:8px;
+      font-size:14px;
+    }
+    .extra-fields {
+      grid-column:3 / 5;
+      display:grid;
+      grid-template-columns:minmax(120px,180px) minmax(180px,1fr);
+      gap:7px;
+      align-items:center;
+    }
+    .seller-input,
+    .note-input {
+      width:100%;
+      padding:7px 8px;
+      border:1px solid #d1d5db;
+      border-radius:7px;
+      font-size:13px;
+      background:#fff;
+    }
+    .copy-full-btn {
+      margin-top:7px;
+      padding:6px 8px;
+      font-size:12px;
+    }
+    @media(max-width:700px){
+      .extra-fields{
+        grid-column:2;
+        grid-template-columns:1fr;
+      }
+    }
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -109,7 +155,18 @@
 
     <div id="monthTabs" class="month-tabs"></div>
 
-    <div class="summary">
+    
+    <div class="search-bar">
+      <input
+        id="couponSearch"
+        class="search-input"
+        type="search"
+        placeholder="쿠폰번호 검색 (전체번호 / 앞4자리 / 뒤6자리)"
+      >
+      <button id="clearCouponSearch">검색 초기화</button>
+    </div>
+
+<div class="summary">
       <div>현재 목록<b id="total">0</b></div>
       <div>미사용<b id="active">0</b></div>
       <div>사용완료<b id="used">0</b></div>
@@ -159,6 +216,7 @@ let mode = "all";
 let monthMode = "auto";
 let selectedMonth = null;
 let selectedIds = new Set();
+let couponSearchText = "";
 let syncTimer = null;
 
 if (configured) {
@@ -168,7 +226,7 @@ if (configured) {
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[m]);
 }
-function defaultState(){ return {used:false, used_at:null, usage_place:""}; }
+function defaultState(){ return {used:false, used_at:null, usage_place:"", seller_name:"", note:""}; }
 function getState(id){ return stateMap[id] || defaultState(); }
 function loadLocalState(){ try { stateMap = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}"); } catch(_) { stateMap = {}; } }
 function saveLocalState(){ localStorage.setItem(LOCAL_KEY, JSON.stringify(stateMap)); }
@@ -267,8 +325,47 @@ function monthFilteredCoupons(){
   return coupons.filter(c=>selectedMonth==="all" || couponMonth(c)===selectedMonth);
 }
 
+
+function searchMatchesCoupon(c){
+  const q=String(couponSearchText||"")
+    .trim()
+    .toLowerCase();
+
+  if(!q) return true;
+
+  const digits=q.replace(/\D/g,"");
+  const s=getState(c.id);
+
+  const first4=String(c.first4||"");
+  const last6=String(c.last6||"");
+  const joined=first4+last6;
+
+  if(digits){
+    // 전체 16자리를 입력해도 앞4 + 뒤6을 이용해 해당 쿠폰을 찾을 수 있습니다.
+    if(digits.length>=10){
+      const qFirst=digits.slice(0,4);
+      const qLast=digits.slice(-6);
+      if(first4===qFirst && last6===qLast) return true;
+    }
+
+    if(
+      first4.includes(digits) ||
+      last6.includes(digits) ||
+      joined.includes(digits)
+    ) return true;
+  }
+
+  const haystack=[
+    c.merchant,c.category,c.title,c.expiry,
+    s.seller_name,s.note
+  ].map(v=>String(v||"").toLowerCase()).join(" ");
+
+  return haystack.includes(q);
+}
+
 function visibleCoupons(){
   return monthFilteredCoupons().filter(c=>{
+    if(!searchMatchesCoupon(c)) return false;
     const u=!!getState(c.id).used;
     if(mode==="active") return !u;
     if(mode==="used") return u;
@@ -388,11 +485,99 @@ function render(){
 
     const stateBox=document.createElement("div"); stateBox.className="state-box";
     const badge=document.createElement("div"); badge.className="badge"; badge.textContent=s.used?"사용완료":"미사용"; stateBox.appendChild(badge);
+
+    const copyFull=document.createElement("button");
+    copyFull.className="copy-full-btn";
+    copyFull.textContent="전체번호 복사";
+    copyFull.addEventListener("click",async()=>{
+      copyFull.disabled=true;
+      const oldText=copyFull.textContent;
+      copyFull.textContent="불러오는 중...";
+      try{
+        const {data,error}=await db.functions.invoke(
+          "swift-endpoint",
+          {
+            body:{
+              action:"get_barcode",
+              coupon_id:c.id
+            }
+          }
+        );
+
+        if(error){
+          let detail=error.message||String(error);
+          try{
+            if(error.context){
+              const payload=await error.context.json();
+              if(payload?.error) detail=payload.error;
+            }
+          }catch(_){}
+          throw new Error(detail);
+        }
+
+        if(data?.error) throw new Error(data.error);
+
+        const barcode=String(data?.barcode||"");
+        if(!barcode) throw new Error("전체 쿠폰번호가 없습니다.");
+
+        await navigator.clipboard.writeText(barcode);
+        setSyncStatus(`전체 쿠폰번호 ${barcode} 복사 완료`);
+      }catch(e){
+        setSyncStatus("전체번호 복사 실패: "+(e?.message||String(e)));
+        alert("전체번호 복사 실패: "+(e?.message||String(e)));
+      }finally{
+        copyFull.disabled=false;
+        copyFull.textContent=oldText;
+      }
+    });
+    stateBox.appendChild(copyFull);
     if(s.used && s.used_at){
       const time=document.createElement("div"); time.className="used-time"; time.innerHTML="사용일시<br>"+escapeHtml(formatUsedAt(s.used_at)); stateBox.appendChild(time);
     }
 
-    row.append(selectCheck,check,body,usageBox,stateBox);
+
+    const extraFields=document.createElement("div");
+    extraFields.className="extra-fields";
+
+    const sellerInput=document.createElement("input");
+    sellerInput.className="seller-input";
+    sellerInput.type="text";
+    sellerInput.placeholder="판매자 이름";
+    sellerInput.value=s.seller_name||"";
+    sellerInput.addEventListener("blur",async()=>{
+      const value=sellerInput.value.trim();
+      const before={...getState(c.id)};
+      stateMap[c.id]={...before,seller_name:value};
+      try{
+        await persistState(c.id);
+      }catch(e){
+        stateMap[c.id]=before;
+        sellerInput.value=before.seller_name||"";
+        setSyncStatus("판매자 저장 실패: "+(e?.message||String(e)));
+      }
+    });
+
+    const noteInput=document.createElement("input");
+    noteInput.className="note-input";
+    noteInput.type="text";
+    noteInput.placeholder="특이사항";
+    noteInput.value=s.note||"";
+    noteInput.addEventListener("blur",async()=>{
+      const value=noteInput.value.trim();
+      const before={...getState(c.id)};
+      stateMap[c.id]={...before,note:value};
+      try{
+        await persistState(c.id);
+      }catch(e){
+        stateMap[c.id]=before;
+        noteInput.value=before.note||"";
+        setSyncStatus("특이사항 저장 실패: "+(e?.message||String(e)));
+      }
+    });
+
+    extraFields.append(sellerInput,noteInput);
+
+    row.append(selectCheck,check,body,usageBox,stateBox,extraFields);
     list.appendChild(row);
   }
 }
@@ -407,6 +592,8 @@ async function persistState(couponId){
     used:!!s.used,
     used_at:s.used_at||null,
     usage_place:s.usage_place||null,
+    seller_name:s.seller_name||null,
+    note:s.note||null,
     updated_at:new Date().toISOString()
   }, {onConflict:"owner_id,coupon_id"});
   if(error) throw new Error(supabaseErrorText(error));
@@ -483,7 +670,7 @@ async function loadCloudState(silent=false){
   // 요청 URL이 길어져 400 Bad Request가 날 수 있으므로 owner_id만 조회합니다.
   const {data,error}=await db
     .from("coupon_usage")
-    .select("coupon_id, used, used_at, usage_place, updated_at")
+    .select("coupon_id, used, used_at, usage_place, seller_name, note, updated_at")
     .eq("owner_id",currentUser.id);
 
   if(error) throw new Error(supabaseErrorText(error));
@@ -496,6 +683,8 @@ async function loadCloudState(silent=false){
       used:!!row.used,
       used_at:row.used_at||null,
       usage_place:row.usage_place||"",
+      seller_name:row.seller_name||"",
+      note:row.note||"",
       updated_at:row.updated_at||null
     };
   }
@@ -576,6 +765,20 @@ document.getElementById("sendMagic").onclick=async()=>{
 };
 document.getElementById("signOutBtn").onclick=async()=>{ if(db) await db.auth.signOut(); };
 document.getElementById("refreshBtn").onclick=async()=>{ try{ await loadCoupons(); await loadCloudState(); }catch(e){ setSyncStatus("동기화 실패: "+e.message); } };
+
+document.getElementById("couponSearch").addEventListener("input",(e)=>{
+  couponSearchText=String(e.target.value||"");
+  selectedIds.clear();
+  render();
+});
+
+document.getElementById("clearCouponSearch").onclick=()=>{
+  couponSearchText="";
+  document.getElementById("couponSearch").value="";
+  selectedIds.clear();
+  render();
+};
+
 document.getElementById("showAll").onclick=()=>{mode="all";selectedIds.clear();render();};
 document.getElementById("showActive").onclick=()=>{mode="active";selectedIds.clear();render();};
 document.getElementById("showUsed").onclick=()=>{mode="used";selectedIds.clear();render();};
