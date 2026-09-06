@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v12</title>
+  <title>관람권 현황 · v13</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -116,6 +116,31 @@
         grid-template-columns:1fr;
       }
     }
+
+    .used-history-filter {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin:0 0 12px;
+      padding:10px;
+      border:1px solid #dbeafe;
+      background:#eff6ff;
+      border-radius:10px;
+    }
+    .used-history-filter .label {
+      font-size:13px;
+      font-weight:700;
+      color:#1e3a8a;
+    }
+    .used-history-filter select {
+      padding:8px 9px;
+      border:1px solid #bfdbfe;
+      border-radius:8px;
+      background:#fff;
+      font-size:13px;
+    }
+
 </style>
 </head>
 <body>
@@ -171,8 +196,19 @@
     <div class="toolbar">
       <button id="showAll">전체 보기</button>
       <button id="showActive">미사용만</button>
-      <button id="showUsed">사용완료만</button>
+      <button id="showUsed">사용완료 내역</button>
       <button id="sendUnusedKakao" class="primary">💬 미사용 쿠폰 카톡 보내기</button>
+    </div>
+
+    <div id="usedHistoryFilter" class="used-history-filter hidden">
+      <span class="label">사용완료 기준</span>
+      <select id="usedMonthFilter">
+        <option value="all">전체 월</option>
+      </select>
+      <select id="usedDateFilter">
+        <option value="all">전체 날짜</option>
+      </select>
+      <button id="resetUsedDateFilter">전체 사용완료 보기</button>
     </div>
 
     <div class="bulkbar">
@@ -194,7 +230,7 @@
 
     <div id="list" class="list"></div>
 
-    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. <b>미사용 쿠폰 카톡 보내기</b> 버튼은 전체 번호를 브라우저에 보여주지 않고 Supabase Edge Function에서 직접 카카오로 전송합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 월별 탭은 등록일 기준으로 자동 생성되며, 선택 체크박스로 여러 쿠폰을 한 번에 사용완료/미사용/사용처 변경할 수 있습니다.</div>
+    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. <b>미사용 쿠폰 카톡 보내기</b> 버튼은 전체 번호를 브라우저에 보여주지 않고 Supabase Edge Function에서 직접 카카오로 전송합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 처음 열면 전체 기간의 미사용 쿠폰이 기본으로 표시됩니다. 사용완료 내역은 사용완료 시각 기준으로 월·날짜별 필터가 가능하며 최근 사용순으로 표시됩니다. 월별 탭은 등록일 기준입니다.</div>
   </div>
 </div>
 
@@ -208,11 +244,13 @@ let db = null;
 let currentUser = null;
 let coupons = [];
 let stateMap = {};
-let mode = "all";
-let monthMode = "auto";
-let selectedMonth = null;
+let mode = "active";
+let monthMode = "manual";
+let selectedMonth = "all";
 let selectedIds = new Set();
 let couponSearchText = "";
+let usedHistoryMonth = "all";
+let usedHistoryDate = "all";
 let syncTimer = null;
 
 if (configured) {
@@ -268,6 +306,113 @@ function couponSortKey(c){
   return d.getTime() || 0;
 }
 
+
+function usedDateKey(c){
+  const iso=getState(c.id).used_at;
+  if(!iso) return "";
+  const d=new Date(iso);
+  if(Number.isNaN(d.getTime())) return "";
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function usedMonthKey(c){
+  const key=usedDateKey(c);
+  return key ? key.slice(0,7) : "";
+}
+
+function usedDateLabel(key){
+  if(key==="all") return "전체 날짜";
+  const m=String(key||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${Number(m[2])}월 ${Number(m[3])}일` : key;
+}
+
+function availableUsedMonths(){
+  return [...new Set(
+    coupons
+      .filter(c=>getState(c.id).used)
+      .map(usedMonthKey)
+      .filter(Boolean)
+  )].sort().reverse();
+}
+
+function availableUsedDates(monthKey="all"){
+  return [...new Set(
+    coupons
+      .filter(c=>getState(c.id).used)
+      .filter(c=>monthKey==="all" || usedMonthKey(c)===monthKey)
+      .map(usedDateKey)
+      .filter(Boolean)
+  )].sort().reverse();
+}
+
+function usedHistoryFilteredCoupons(){
+  return coupons
+    .filter(c=>getState(c.id).used)
+    .filter(c=>usedHistoryMonth==="all" || usedMonthKey(c)===usedHistoryMonth)
+    .filter(c=>usedHistoryDate==="all" || usedDateKey(c)===usedHistoryDate)
+    .filter(searchMatchesCoupon)
+    .sort((a,b)=>{
+      const aTime=new Date(getState(a.id).used_at||0).getTime()||0;
+      const bTime=new Date(getState(b.id).used_at||0).getTime()||0;
+      return bTime-aTime;
+    });
+}
+
+function renderUsedHistoryFilters(){
+  const host=document.getElementById("usedHistoryFilter");
+  const monthSelect=document.getElementById("usedMonthFilter");
+  const dateSelect=document.getElementById("usedDateFilter");
+  if(!host || !monthSelect || !dateSelect) return;
+
+  if(mode!=="used"){
+    host.classList.add("hidden");
+    return;
+  }
+
+  host.classList.remove("hidden");
+
+  const months=availableUsedMonths();
+  if(usedHistoryMonth!=="all" && !months.includes(usedHistoryMonth)){
+    usedHistoryMonth="all";
+  }
+
+  monthSelect.innerHTML="";
+  const monthAll=document.createElement("option");
+  monthAll.value="all";
+  monthAll.textContent="전체 월";
+  monthSelect.appendChild(monthAll);
+
+  for(const key of months){
+    const opt=document.createElement("option");
+    opt.value=key;
+    opt.textContent=monthLabel(key);
+    monthSelect.appendChild(opt);
+  }
+  monthSelect.value=usedHistoryMonth;
+
+  const dates=availableUsedDates(usedHistoryMonth);
+  if(usedHistoryDate!=="all" && !dates.includes(usedHistoryDate)){
+    usedHistoryDate="all";
+  }
+
+  dateSelect.innerHTML="";
+  const dateAll=document.createElement("option");
+  dateAll.value="all";
+  dateAll.textContent="전체 날짜";
+  dateSelect.appendChild(dateAll);
+
+  for(const key of dates){
+    const opt=document.createElement("option");
+    opt.value=key;
+    opt.textContent=usedDateLabel(key);
+    dateSelect.appendChild(opt);
+  }
+  dateSelect.value=usedHistoryDate;
+}
+
 function couponMonth(c){
   const raw=String(c.first_seen_at||c.received_at||"");
   const m=raw.match(/^(20\d{2})[-/.](\d{1,2})/);
@@ -301,6 +446,12 @@ function renderMonthTabs(){
   ensureMonthSelection();
   const host=document.getElementById("monthTabs");
   if(!host) return;
+
+  if(mode==="used"){
+    host.style.display="none";
+    return;
+  }
+  host.style.display="";
   host.innerHTML="";
   const keys=["all",...availableMonths()];
   for(const key of keys){
@@ -360,11 +511,14 @@ function searchMatchesCoupon(c){
 }
 
 function visibleCoupons(){
+  if(mode==="used"){
+    return usedHistoryFilteredCoupons();
+  }
+
   return monthFilteredCoupons().filter(c=>{
     if(!searchMatchesCoupon(c)) return false;
     const u=!!getState(c.id).used;
     if(mode==="active") return !u;
-    if(mode==="used") return u;
     return true;
   });
 }
@@ -407,15 +561,24 @@ function render(){
   const list=document.getElementById("list");
   list.innerHTML="";
   renderMonthTabs();
-  const monthRows=monthFilteredCoupons();
-  const total=monthRows.length;
-  const usedCount=monthRows.filter(c=>!!getState(c.id).used).length;
-  document.getElementById("total").textContent=total;
-  document.getElementById("used").textContent=usedCount;
-  document.getElementById("active").textContent=total-usedCount;
-  updateSelectedCount();
+  renderUsedHistoryFilters();
 
   const filtered=visibleCoupons();
+
+  if(mode==="used"){
+    document.getElementById("total").textContent=filtered.length;
+    document.getElementById("used").textContent=filtered.length;
+    document.getElementById("active").textContent=0;
+  }else{
+    const monthRows=monthFilteredCoupons().filter(searchMatchesCoupon);
+    const total=monthRows.length;
+    const usedCount=monthRows.filter(c=>!!getState(c.id).used).length;
+    document.getElementById("total").textContent=total;
+    document.getElementById("used").textContent=usedCount;
+    document.getElementById("active").textContent=total-usedCount;
+  }
+
+  updateSelectedCount();
   if(!filtered.length){ list.innerHTML='<div class="empty">표시할 관람권이 없습니다.</div>'; return; }
 
   for(const c of filtered){
@@ -756,8 +919,22 @@ document.getElementById("clearCouponSearch").onclick=()=>{
 };
 
 document.getElementById("showAll").onclick=()=>{mode="all";selectedIds.clear();render();};
-document.getElementById("showActive").onclick=()=>{mode="active";selectedIds.clear();render();};
-document.getElementById("showUsed").onclick=()=>{mode="used";selectedIds.clear();render();};
+document.getElementById("showActive").onclick=()=>{
+  mode="active";
+  selectedMonth="all";
+  monthMode="manual";
+  selectedIds.clear();
+  render();
+};
+document.getElementById("showUsed").onclick=()=>{
+  mode="used";
+  selectedMonth="all";
+  monthMode="manual";
+  usedHistoryMonth="all";
+  usedHistoryDate="all";
+  selectedIds.clear();
+  render();
+};
 
 
 document.getElementById("sendUnusedKakao").onclick=async()=>{
@@ -823,6 +1000,27 @@ document.getElementById("sendUnusedKakao").onclick=async()=>{
     btn.disabled=false;
     btn.textContent=oldText;
   }
+};
+
+
+document.getElementById("usedMonthFilter").addEventListener("change",(e)=>{
+  usedHistoryMonth=String(e.target.value||"all");
+  usedHistoryDate="all";
+  selectedIds.clear();
+  render();
+});
+
+document.getElementById("usedDateFilter").addEventListener("change",(e)=>{
+  usedHistoryDate=String(e.target.value||"all");
+  selectedIds.clear();
+  render();
+});
+
+document.getElementById("resetUsedDateFilter").onclick=()=>{
+  usedHistoryMonth="all";
+  usedHistoryDate="all";
+  selectedIds.clear();
+  render();
 };
 
 document.getElementById("selectVisible").onclick=()=>{
