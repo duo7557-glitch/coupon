@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v11</title>
+  <title>관람권 현황 · v12</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -95,12 +95,8 @@
     }
     .extra-fields {
       grid-column:3 / 5;
-      display:grid;
-      grid-template-columns:minmax(120px,180px) minmax(180px,1fr);
-      gap:7px;
-      align-items:center;
+      display:block;
     }
-    .seller-input,
     .note-input {
       width:100%;
       padding:7px 8px;
@@ -226,7 +222,7 @@ if (configured) {
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[m]);
 }
-function defaultState(){ return {used:false, used_at:null, usage_place:"", seller_name:"", note:""}; }
+function defaultState(){ return {used:false, used_at:null, usage_place:"", note:""}; }
 function getState(id){ return stateMap[id] || defaultState(); }
 function loadLocalState(){ try { stateMap = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}"); } catch(_) { stateMap = {}; } }
 function saveLocalState(){ localStorage.setItem(LOCAL_KEY, JSON.stringify(stateMap)); }
@@ -357,7 +353,7 @@ function searchMatchesCoupon(c){
 
   const haystack=[
     c.merchant,c.category,c.title,c.expiry,
-    s.seller_name,s.note
+    s.note
   ].map(v=>String(v||"").toLowerCase()).join(" ");
 
   return haystack.includes(q);
@@ -539,24 +535,6 @@ function render(){
     const extraFields=document.createElement("div");
     extraFields.className="extra-fields";
 
-    const sellerInput=document.createElement("input");
-    sellerInput.className="seller-input";
-    sellerInput.type="text";
-    sellerInput.placeholder="판매자 이름";
-    sellerInput.value=s.seller_name||"";
-    sellerInput.addEventListener("blur",async()=>{
-      const value=sellerInput.value.trim();
-      const before={...getState(c.id)};
-      stateMap[c.id]={...before,seller_name:value};
-      try{
-        await persistState(c.id);
-      }catch(e){
-        stateMap[c.id]=before;
-        sellerInput.value=before.seller_name||"";
-        setSyncStatus("판매자 저장 실패: "+(e?.message||String(e)));
-      }
-    });
-
     const noteInput=document.createElement("input");
     noteInput.className="note-input";
     noteInput.type="text";
@@ -575,7 +553,7 @@ function render(){
       }
     });
 
-    extraFields.append(sellerInput,noteInput);
+    extraFields.append(noteInput);
 
     row.append(selectCheck,check,body,usageBox,stateBox,extraFields);
     list.appendChild(row);
@@ -592,7 +570,6 @@ async function persistState(couponId){
     used:!!s.used,
     used_at:s.used_at||null,
     usage_place:s.usage_place||null,
-    seller_name:s.seller_name||null,
     note:s.note||null,
     updated_at:new Date().toISOString()
   }, {onConflict:"owner_id,coupon_id"});
@@ -670,7 +647,7 @@ async function loadCloudState(silent=false){
   // 요청 URL이 길어져 400 Bad Request가 날 수 있으므로 owner_id만 조회합니다.
   const {data,error}=await db
     .from("coupon_usage")
-    .select("coupon_id, used, used_at, usage_place, seller_name, note, updated_at")
+    .select("coupon_id, used, used_at, usage_place, note, updated_at")
     .eq("owner_id",currentUser.id);
 
   if(error) throw new Error(supabaseErrorText(error));
@@ -683,7 +660,6 @@ async function loadCloudState(silent=false){
       used:!!row.used,
       used_at:row.used_at||null,
       usage_place:row.usage_place||"",
-      seller_name:row.seller_name||"",
       note:row.note||"",
       updated_at:row.updated_at||null
     };
