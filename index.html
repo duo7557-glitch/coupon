@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v13</title>
+  <title>관람권 현황 · v14</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -99,11 +99,14 @@
     }
     .note-input {
       width:100%;
-      padding:7px 8px;
+      min-height:42px;
+      padding:8px 9px;
       border:1px solid #d1d5db;
       border-radius:7px;
       font-size:13px;
+      line-height:1.4;
       background:#fff;
+      font-family:inherit;
     }
     .copy-full-btn {
       margin-top:7px;
@@ -112,8 +115,16 @@
     }
     @media(max-width:700px){
       .extra-fields{
-        grid-column:2;
-        grid-template-columns:1fr;
+        grid-column:1 / -1;
+        width:100%;
+        margin-top:4px;
+      }
+      .note-input{
+        width:100%;
+        min-height:64px;
+        font-size:16px;
+        line-height:1.45;
+        padding:10px 11px;
       }
     }
 
@@ -698,11 +709,12 @@ function render(){
     const extraFields=document.createElement("div");
     extraFields.className="extra-fields";
 
-    const noteInput=document.createElement("input");
+    const noteInput=document.createElement("textarea");
     noteInput.className="note-input";
-    noteInput.type="text";
+    noteInput.rows=2;
     noteInput.placeholder="특이사항";
     noteInput.value=s.note||"";
+    noteInput.style.resize="vertical";
     noteInput.addEventListener("blur",async()=>{
       const value=noteInput.value.trim();
       const before={...getState(c.id)};
