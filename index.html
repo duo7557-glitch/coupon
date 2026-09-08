@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v14</title>
+  <title>관람권 현황 · v15</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -263,6 +263,9 @@ let couponSearchText = "";
 let usedHistoryMonth = "all";
 let usedHistoryDate = "all";
 let syncTimer = null;
+const noteDrafts = new Map();
+const noteSaveTimers = new Map();
+const noteEditingIds = new Set();
 
 if (configured) {
   db = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
@@ -282,6 +285,57 @@ function formatUsedAt(iso){
   return new Intl.DateTimeFormat("ko-KR", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(d);
 }
 function setSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el) el.textContent=msg; }
+
+function couponMaskedLabel(c){
+  return `${c.first4||""}••••••${c.last6||""}`;
+}
+
+function effectiveNote(couponId){
+  if(noteDrafts.has(couponId)) return noteDrafts.get(couponId);
+  return getState(couponId).note||"";
+}
+
+function cancelNoteSaveTimer(couponId){
+  const timer=noteSaveTimers.get(couponId);
+  if(timer){
+    clearTimeout(timer);
+    noteSaveTimers.delete(couponId);
+  }
+}
+
+async function saveNoteNow(couponId){
+  cancelNoteSaveTimer(couponId);
+
+  const value=String(
+    noteDrafts.has(couponId)
+      ? noteDrafts.get(couponId)
+      : getState(couponId).note||""
+  );
+
+  const before={...getState(couponId)};
+  stateMap[couponId]={...before,note:value};
+
+  try{
+    await persistState(couponId);
+    noteDrafts.delete(couponId);
+    setSyncStatus("특이사항 저장 완료");
+  }catch(e){
+    // 실패 시 draft는 남겨서 사용자가 쓴 글이 사라지지 않게 함
+    noteDrafts.set(couponId,value);
+    stateMap[couponId]={...before,note:value};
+    setSyncStatus("특이사항 저장 실패: "+(e?.message||String(e)));
+    throw e;
+  }
+}
+
+function scheduleNoteSave(couponId){
+  cancelNoteSaveTimer(couponId);
+  const timer=setTimeout(()=>{
+    saveNoteNow(couponId).catch(()=>{});
+  },800);
+  noteSaveTimers.set(couponId,timer);
+}
+
 
 function supabaseErrorText(error){
   if(!error) return "알 수 없는 오류";
@@ -614,10 +668,32 @@ function render(){
     check.title="사용완료";
     check.addEventListener("change", async()=>{
       const before={...getState(c.id)};
-      stateMap[c.id]={...before, used:check.checked, used_at:check.checked?(before.used_at||new Date().toISOString()):null};
+      const nextUsed=check.checked;
+      const actionText=nextUsed?"사용완료":"미사용";
+      const masked=couponMaskedLabel(c);
+
+      if(!confirm(`${masked}\n이 쿠폰을 '${actionText}' 상태로 변경할까요?`)){
+        check.checked=!!before.used;
+        return;
+      }
+
+      stateMap[c.id]={
+        ...before,
+        used:nextUsed,
+        used_at:nextUsed
+          ? (before.used_at||new Date().toISOString())
+          : null
+      };
+
       render();
-      try { await persistState(c.id); }
-      catch(e){ stateMap[c.id]=before; render(); setSyncStatus("저장 실패: "+e.message); }
+
+      try{
+        await persistState(c.id);
+      }catch(e){
+        stateMap[c.id]=before;
+        render();
+        setSyncStatus("저장 실패: "+e.message);
+      }
     });
 
     const body=document.createElement("div");
@@ -713,18 +789,28 @@ function render(){
     noteInput.className="note-input";
     noteInput.rows=2;
     noteInput.placeholder="특이사항";
-    noteInput.value=s.note||"";
+    noteInput.value=effectiveNote(c.id);
     noteInput.style.resize="vertical";
+
+    noteInput.addEventListener("focus",()=>{
+      noteEditingIds.add(c.id);
+    });
+
+    noteInput.addEventListener("input",()=>{
+      const value=noteInput.value;
+      noteDrafts.set(c.id,value);
+      stateMap[c.id]={...getState(c.id),note:value};
+      scheduleNoteSave(c.id);
+      setSyncStatus("특이사항 입력 중... 자동 저장 대기");
+    });
+
     noteInput.addEventListener("blur",async()=>{
-      const value=noteInput.value.trim();
-      const before={...getState(c.id)};
-      stateMap[c.id]={...before,note:value};
-      try{
-        await persistState(c.id);
-      }catch(e){
-        stateMap[c.id]=before;
-        noteInput.value=before.note||"";
-        setSyncStatus("특이사항 저장 실패: "+(e?.message||String(e)));
+      noteEditingIds.delete(c.id);
+
+      if(noteDrafts.has(c.id)){
+        try{
+          await saveNoteNow(c.id);
+        }catch(_){}
       }
     });
 
@@ -831,11 +917,14 @@ async function loadCloudState(silent=false){
   const next={};
   for(const row of data||[]){
     if(!validIds.has(row.coupon_id)) continue;
-    next[row.coupon_id]={
+    const couponId=row.coupon_id;
+    next[couponId]={
       used:!!row.used,
       used_at:row.used_at||null,
       usage_place:row.usage_place||"",
-      note:row.note||"",
+      note:noteDrafts.has(couponId)
+        ? noteDrafts.get(couponId)
+        : (row.note||""),
       updated_at:row.updated_at||null
     };
   }
@@ -861,12 +950,18 @@ function updateAuthUI(){
 }
 function startSyncTimer(){
   clearInterval(syncTimer);
+
   if(currentUser) syncTimer=setInterval(async()=>{
+    // 특이사항 입력 중에는 render()가 textarea를 다시 만드는 것을 막습니다.
+    if(noteEditingIds.size>0 || noteDrafts.size>0){
+      return;
+    }
+
     try{
       await loadCoupons();
       await loadCloudState(true);
     }catch(_){}
-  },5000);
+  },15000);
 }
 
 async function initAuth(){
@@ -1105,8 +1200,30 @@ document.getElementById("bulkPlaceApply").onclick=async()=>{
   }
 };
 
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&currentUser){ loadCoupons().then(()=>loadCloudState(true)).catch(()=>{}); } });
-window.addEventListener("focus",()=>{ if(currentUser){ loadCoupons().then(()=>loadCloudState(true)).catch(()=>{}); } });
+document.addEventListener("visibilitychange",()=>{
+  if(
+    !document.hidden &&
+    currentUser &&
+    noteEditingIds.size===0 &&
+    noteDrafts.size===0
+  ){
+    loadCoupons()
+      .then(()=>loadCloudState(true))
+      .catch(()=>{});
+  }
+});
+
+window.addEventListener("focus",()=>{
+  if(
+    currentUser &&
+    noteEditingIds.size===0 &&
+    noteDrafts.size===0
+  ){
+    loadCoupons()
+      .then(()=>loadCloudState(true))
+      .catch(()=>{});
+  }
+});
 
 (async()=>{ await initAuth(); })();
 </script>
