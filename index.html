@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>관람권 현황 · v15</title>
+  <title>관람권 현황 · v16</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <style>
@@ -74,7 +74,7 @@
       .state-box { text-align:left; }
       .used-time { white-space:normal; }
     }
-  
+
     .search-bar {
       display:flex;
       gap:8px;
@@ -152,7 +152,56 @@
       font-size:13px;
     }
 
-</style>
+    .manual-add {
+      padding:12px;
+      margin:0 0 12px;
+      border:1px solid #fde68a;
+      background:#fffbeb;
+      border-radius:10px;
+    }
+    .manual-add summary {
+      cursor:pointer;
+      font-weight:700;
+      font-size:14px;
+      color:#92400e;
+    }
+    .manual-grid {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(150px,1fr));
+      gap:8px;
+      margin-top:10px;
+    }
+    .manual-grid label {
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      font-size:12px;
+      color:#78350f;
+      font-weight:700;
+    }
+    .manual-grid input,.manual-grid select {
+      padding:9px 10px;
+      border:1px solid #fcd34d;
+      border-radius:8px;
+      font-size:14px;
+      background:#fff;
+      font-weight:400;
+      color:#111827;
+    }
+    .manual-full {
+      grid-column:1 / -1;
+    }
+    .manual-actions {
+      display:flex;
+      gap:8px;
+      margin-top:10px;
+      flex-wrap:wrap;
+    }
+    @media(max-width:700px){
+      .manual-grid { grid-template-columns:1fr; }
+    }
+
+  </style>
 </head>
 <body>
 <div class="wrap">
@@ -185,9 +234,43 @@
       </div>
     </div>
 
+    <details class="manual-add" id="manualAdd">
+      <summary>✍ 관람권 / 스위트콤보 수동 등록</summary>
+      <div class="manual-grid">
+        <label>카테고리
+          <select id="manualCategory">
+            <option value="관람권">관람권</option>
+            <option value="스위트 콤보">스위트 콤보</option>
+          </select>
+        </label>
+        <label>교환처
+          <select id="manualMerchant">
+            <option value="롯데시네마">롯데시네마</option>
+            <option value="CGV">CGV</option>
+            <option value="메가박스">메가박스</option>
+            <option value="미분류">미분류</option>
+          </select>
+        </label>
+        <label class="manual-full">쿠폰번호(바코드)
+          <input id="manualBarcode" type="text" inputmode="numeric" placeholder="예: 6261743xxxxxxxxx">
+        </label>
+        <label>상품명 (선택)
+          <input id="manualTitle" type="text" placeholder="비워두면 자동 생성">
+        </label>
+        <label>유효기간 (선택)
+          <input id="manualExpiry" type="text" placeholder="예: 2026/12/31">
+        </label>
+      </div>
+      <div class="manual-actions">
+        <button class="primary" id="manualAddBtn">➕ 등록</button>
+        <button id="manualClearBtn">입력칸 비우기</button>
+      </div>
+      <div class="status" id="manualStatus"></div>
+    </details>
+
     <div id="monthTabs" class="month-tabs"></div>
 
-    
+
     <div class="search-bar">
       <input
         id="couponSearch"
@@ -241,7 +324,7 @@
 
     <div id="list" class="list"></div>
 
-    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. <b>미사용 쿠폰 카톡 보내기</b> 버튼은 전체 번호를 브라우저에 보여주지 않고 Supabase Edge Function에서 직접 카카오로 전송합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 처음 열면 전체 기간의 미사용 쿠폰이 기본으로 표시됩니다. 사용완료 내역은 사용완료 시각 기준으로 월·날짜별 필터가 가능하며 최근 사용순으로 표시됩니다. 월별 탭은 등록일 기준입니다.</div>
+    <div class="note">추출기에서 등록한 관람권을 Supabase에서 자동으로 불러옵니다. 바코드는 <b>앞 4자리 + 뒷 6자리</b>만 표시합니다. <b>미사용 쿠폰 카톡 보내기</b> 버튼은 전체 번호를 브라우저에 보여주지 않고 Supabase Edge Function에서 직접 카카오로 전송합니다. 사용완료를 체크하면 그 순간의 날짜·시간이 기록되고 체크를 풀면 사용시간도 삭제됩니다. 사용처는 <b>당근 / 니콘 / 깊스 / 팔라고 / 기타</b> 중 하나를 선택할 수 있습니다. 처음 열면 전체 기간의 미사용 쿠폰이 기본으로 표시됩니다. 사용완료 내역은 사용완료 시각 기준으로 월·날짜별 필터가 가능하며 최근 사용순으로 표시됩니다. 월별 탭은 등록일 기준입니다. <b>수동 등록</b>은 로그인한 상태에서만 가능하며, 등록 즉시 이 목록과 Supabase에 반영됩니다.</div>
   </div>
 </div>
 
@@ -285,6 +368,7 @@ function formatUsedAt(iso){
   return new Intl.DateTimeFormat("ko-KR", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(d);
 }
 function setSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el) el.textContent=msg; }
+function setManualStatus(msg){ const el=document.getElementById("manualStatus"); if(el) el.textContent=msg; }
 
 function couponMaskedLabel(c){
   return `${c.first4||""}••••••${c.last6||""}`;
@@ -1199,6 +1283,82 @@ document.getElementById("bulkPlaceApply").onclick=async()=>{
     setSyncStatus("일괄 사용처 변경 실패: "+e.message);
   }
 };
+
+function manualClearForm(){
+  document.getElementById("manualCategory").value="관람권";
+  document.getElementById("manualMerchant").value="롯데시네마";
+  document.getElementById("manualBarcode").value="";
+  document.getElementById("manualTitle").value="";
+  document.getElementById("manualExpiry").value="";
+  setManualStatus("");
+}
+
+async function manualAddCoupon(){
+  if(!db || !currentUser){
+    alert("수동 등록은 로그인한 상태에서만 가능합니다. 먼저 이메일로 로그인해주세요.");
+    return;
+  }
+
+  const category=document.getElementById("manualCategory").value;
+  const merchant=document.getElementById("manualMerchant").value;
+  const rawBarcode=document.getElementById("manualBarcode").value;
+  const barcode=String(rawBarcode||"").replace(/\D/g,"");
+  let title=document.getElementById("manualTitle").value.trim();
+  let expiry=document.getElementById("manualExpiry").value.trim();
+
+  if(!barcode || barcode.length<10 || barcode.length>20){
+    alert("쿠폰번호(바코드)는 숫자 10~20자리로 입력해주세요.");
+    return;
+  }
+
+  if(!title) title=`${category} (${barcode.slice(-4)})`;
+  if(!expiry) expiry="상세내용 참조";
+
+  const first4=barcode.slice(0,4);
+  const last6=barcode.slice(-6);
+  const nowIso=new Date().toISOString();
+  const couponId=(window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const btn=document.getElementById("manualAddBtn");
+  btn.disabled=true;
+  setManualStatus("등록 중...");
+
+  try{
+    const {error}=await db.from("coupon_catalog").insert({
+      owner_id:currentUser.id,
+      coupon_id:couponId,
+      barcode,
+      first4,
+      last6,
+      merchant,
+      category,
+      title,
+      expiry,
+      received_at:nowIso,
+      first_seen_at:nowIso,
+      updated_at:nowIso
+    });
+
+    if(error){
+      if(error.code==="23505"){
+        throw new Error("이미 등록된 쿠폰번호입니다.");
+      }
+      throw new Error(supabaseErrorText(error));
+    }
+
+    setManualStatus(`✅ 등록 완료: ${couponMaskedLabel({first4,last6})}`);
+    manualClearForm();
+    await loadCoupons();
+  }catch(e){
+    setManualStatus("등록 실패: "+(e?.message||String(e)));
+    alert("등록 실패: "+(e?.message||String(e)));
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+document.getElementById("manualAddBtn").onclick=manualAddCoupon;
+document.getElementById("manualClearBtn").onclick=manualClearForm;
 
 document.addEventListener("visibilitychange",()=>{
   if(
