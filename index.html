@@ -26,6 +26,7 @@
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
     .month-tabs { display:flex; gap:7px; flex-wrap:wrap; margin:4px 0 12px; }
     .month-tabs button.active { background:#111827; color:#fff; border-color:#111827; }
+    .category-tabs button.active { background:#2563eb; border-color:#2563eb; }
     .bulkbar {
       display:flex; gap:7px; flex-wrap:wrap; align-items:center;
       padding:10px; margin:0 0 12px; border:1px solid #dbeafe;
@@ -268,6 +269,7 @@
       <div class="status" id="manualStatus"></div>
     </details>
 
+    <div id="categoryTabs" class="month-tabs category-tabs"></div>
     <div id="monthTabs" class="month-tabs"></div>
 
 
@@ -341,6 +343,8 @@ let stateMap = {};
 let mode = "active";
 let monthMode = "manual";
 let selectedMonth = "all";
+let selectedCategory = "관람권";
+const CATEGORY_OPTIONS = ["관람권", "스위트 콤보", "전체"];
 let selectedIds = new Set();
 let couponSearchText = "";
 let usedHistoryMonth = "all";
@@ -481,6 +485,7 @@ function usedDateLabel(key){
 function availableUsedMonths(){
   return [...new Set(
     coupons
+      .filter(categoryMatches)
       .filter(c=>getState(c.id).used)
       .map(usedMonthKey)
       .filter(Boolean)
@@ -490,6 +495,7 @@ function availableUsedMonths(){
 function availableUsedDates(monthKey="all"){
   return [...new Set(
     coupons
+      .filter(categoryMatches)
       .filter(c=>getState(c.id).used)
       .filter(c=>monthKey==="all" || usedMonthKey(c)===monthKey)
       .map(usedDateKey)
@@ -497,9 +503,32 @@ function availableUsedDates(monthKey="all"){
   )].sort().reverse();
 }
 
+function categoryMatches(c){
+  if(selectedCategory==="전체") return true;
+  return String(c.category||"").trim()===selectedCategory;
+}
+
+function renderCategoryTabs(){
+  const host=document.getElementById("categoryTabs");
+  if(!host) return;
+  host.innerHTML="";
+  for(const key of CATEGORY_OPTIONS){
+    const btn=document.createElement("button");
+    btn.textContent=key;
+    if(selectedCategory===key) btn.classList.add("active");
+    btn.onclick=()=>{
+      selectedCategory=key;
+      selectedIds.clear();
+      render();
+    };
+    host.appendChild(btn);
+  }
+}
+
 function usedHistoryFilteredCoupons(){
   return coupons
     .filter(c=>getState(c.id).used)
+    .filter(categoryMatches)
     .filter(c=>usedHistoryMonth==="all" || usedMonthKey(c)===usedHistoryMonth)
     .filter(c=>usedHistoryDate==="all" || usedDateKey(c)===usedHistoryDate)
     .filter(searchMatchesCoupon)
@@ -576,7 +605,7 @@ function monthLabel(key){
 }
 
 function availableMonths(){
-  return [...new Set(coupons.map(couponMonth).filter(Boolean))].sort().reverse();
+  return [...new Set(coupons.filter(categoryMatches).map(couponMonth).filter(Boolean))].sort().reverse();
 }
 
 function ensureMonthSelection(){
@@ -618,7 +647,9 @@ function renderMonthTabs(){
 
 function monthFilteredCoupons(){
   ensureMonthSelection();
-  return coupons.filter(c=>selectedMonth==="all" || couponMonth(c)===selectedMonth);
+  return coupons
+    .filter(categoryMatches)
+    .filter(c=>selectedMonth==="all" || couponMonth(c)===selectedMonth);
 }
 
 
@@ -709,6 +740,7 @@ async function persistStates(ids){
 function render(){
   const list=document.getElementById("list");
   list.innerHTML="";
+  renderCategoryTabs();
   renderMonthTabs();
   renderUsedHistoryFilters();
 
