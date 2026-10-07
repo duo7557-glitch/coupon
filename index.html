@@ -1351,6 +1351,33 @@ async function manualAddCoupon(){
   const nowIso=new Date().toISOString();
   const couponId=(window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+  // 전체 바코드는 저장되지 않으므로 앞4자리+뒤6자리로 이미 등록된 쿠폰인지 확인합니다.
+  const existing=coupons.find(c=>c.first4===first4 && c.last6===last6);
+  if(existing){
+    const already=!!getState(existing.id).used;
+    if(already){
+      alert(`이미 등록되어 있고 사용완료로도 표시된 쿠폰입니다. (${couponMaskedLabel(existing)})`);
+      return;
+    }
+    if(!confirm(`이미 등록된 쿠폰입니다. (${couponMaskedLabel(existing)})\n새로 추가하지 않고 '사용완료'로 표시할까요?`)){
+      return;
+    }
+    const before={...getState(existing.id)};
+    stateMap[existing.id]={...before, used:true, used_at:before.used_at||nowIso};
+    render();
+    try{
+      await persistState(existing.id);
+      setManualStatus(`✅ 이미 등록된 쿠폰을 사용완료로 표시했습니다: ${couponMaskedLabel(existing)}`);
+      manualClearForm();
+    }catch(e){
+      stateMap[existing.id]=before;
+      render();
+      setManualStatus("사용완료 처리 실패: "+(e?.message||String(e)));
+      alert("사용완료 처리 실패: "+(e?.message||String(e)));
+    }
+    return;
+  }
+
   const btn=document.getElementById("manualAddBtn");
   btn.disabled=true;
   setManualStatus("등록 중...");
