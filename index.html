@@ -322,6 +322,8 @@
         <option value="기타">기타</option>
       </select>
       <button id="bulkPlaceApply">선택 사용처 적용</button>
+      <input id="bulkNoteInput" class="search-input" type="text" placeholder="선택한 쿠폰에 적용할 특이사항" style="min-width:160px;">
+      <button id="bulkNoteApply">선택 특이사항 적용</button>
     </div>
 
     <div id="list" class="list"></div>
@@ -726,6 +728,7 @@ async function persistStates(ids){
       used:!!s.used,
       used_at:s.used_at||null,
       usage_place:s.usage_place||null,
+      note:s.note||null,
       updated_at:new Date().toISOString()
     };
   });
@@ -1313,6 +1316,30 @@ document.getElementById("bulkPlaceApply").onclick=async()=>{
     for(const [id,s] of before) stateMap[id]=s;
     render();
     setSyncStatus("일괄 사용처 변경 실패: "+e.message);
+  }
+};
+
+document.getElementById("bulkNoteApply").onclick=async()=>{
+  const ids=[...selectedIds];
+  if(!ids.length){ alert("먼저 일괄 처리할 쿠폰을 선택해주세요."); return; }
+  const note=document.getElementById("bulkNoteInput").value;
+  if(!confirm(`선택한 ${ids.length}개의 특이사항을 '${note||"(빈 값)"}'(으)로 설정할까요?`)) return;
+  const before=new Map(ids.map(id=>[id,{...getState(id)}]));
+  for(const id of ids){
+    cancelNoteSaveTimer(id);
+    noteDrafts.delete(id);
+    noteEditingIds.delete(id);
+    const s=getState(id);
+    stateMap[id]={...s,note};
+  }
+  render();
+  try{
+    await persistStates(ids);
+    setSyncStatus(`${ids.length}개 특이사항 적용 완료`);
+  }catch(e){
+    for(const [id,s] of before) stateMap[id]=s;
+    render();
+    setSyncStatus("일괄 특이사항 적용 실패: "+e.message);
   }
 };
 
